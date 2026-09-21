@@ -30,7 +30,7 @@ You can also request custom space for individual questions. Default: medium spac
 
 Output files keep the original name with `_spaced` appended before `.pdf`: `Homework 01.pdf` → `Homework 01_spaced.pdf`. Existing files are never overwritten.
 
-Ordinary web, email, and internal page links remain clickable and move with the original content. Annotations and forms still require preservation support.
+Ordinary web, email, internal page links, and named footnote destinations (such as LaTeX `Hfootnote.1`) remain clickable and move with the original content. Annotations and forms still require preservation support.
 
 ## Development
 

@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import re
+from urllib.parse import unquote, quote
 import pymupdf as fitz
 
 SIZES = {'small': 72, 'medium': 144, 'large': 252}
@@ -28,7 +29,7 @@ def load_source(path):
         if list(page.annots() or []) or list(page.widgets() or []):
             raise ValueError('Annotations or forms are unsupported; refusing to remove or flatten source content.')
         for link in page.get_links():
-            if link['kind'] not in (fitz.LINK_URI, fitz.LINK_GOTO, fitz.LINK_GOTOR, fitz.LINK_LAUNCH):
+            if link['kind'] not in (fitz.LINK_URI, fitz.LINK_GOTO, fitz.LINK_GOTOR, fitz.LINK_LAUNCH, fitz.LINK_NAMED):
                 raise ValueError('Unsupported link action; cannot preserve this particular link.')
     return doc
 
@@ -110,8 +111,39 @@ def mapped_destination(mappings, page_number, point):
     return fragment['output_page']-1, fitz.Point(point.x, point.y+offset)
 
 
+def resolve_named_link(doc, link):
+    """Resolve both current nameddest and older name=nameddest=... forms."""
+    raw = link.get('nameddest') or link.get('name') or ''
+    name = raw.removeprefix('#').removeprefix('nameddest=')
+    names = doc.resolve_names()
+    # Prefer exact spelling: a literal % in a PDF name is not necessarily escaped.
+    for candidate in dict.fromkeys((name, unquote(name))):
+        entry = names.get(candidate)
+        if entry and 0 <= entry.get('page', -1) < len(doc) and 'to' in entry:
+            page = entry['page']
+            point = fitz.Point(entry['to']) * doc[page].transformation_matrix
+            return {'kind': fitz.LINK_GOTO, 'page': page, 'to': point,
+                    'zoom': entry.get('zoom', 0)}
+        uri = '#nameddest=' + quote(candidate, safe='')
+        # Also handles destinations with Fit/FitH/FitR instead of XYZ.
+        result = doc.resolve_link(uri)
+        if result and 0 <= result[0] < len(doc):
+            return {'kind': fitz.LINK_GOTO, 'page': result[0],
+                    'to': fitz.Point(result[1], result[2])}
+    # Some older versions classify page/zoom URI destinations as LINK_NAMED.
+    if raw.startswith(('page=', '#page=')):
+        result = doc.resolve_link('#'+raw.lstrip('#'))
+        if result and 0 <= result[0] < len(doc):
+            return {'kind': fitz.LINK_GOTO, 'page': result[0],
+                    'to': fitz.Point(result[1], result[2])}
+    # A broken source destination is not a reason to discard the worksheet.
+    # Keep its original named target and report the pre-existing problem externally.
+    return {'kind': fitz.LINK_GOTO, 'page': -1, 'to': name}
+
+
 def restore_links(src, dst, mappings):
     count = 0
+    warnings = []
     for page in src:
         for link in page.get_links():
             rect = link['from']
@@ -122,8 +154,15 @@ def restore_links(src, dst, mappings):
             offset = fragment['output_rect'][1]-fragment['source_rect'][1]
             copied = {k:v for k,v in link.items() if k not in ('xref','id')}
             copied['from'] = fitz.Rect(rect.x0,rect.y0+offset,rect.x1,rect.y1+offset)
-            if copied['kind'] == fitz.LINK_GOTO:
-                copied['page'], copied['to'] = mapped_destination(mappings,link['page'],link.get('to',fitz.Point(0,0)))
+            if copied['kind'] == fitz.LINK_NAMED:
+                resolved = resolve_named_link(src, link)
+                copied.pop('name', None)
+                copied.pop('nameddest', None)
+                copied.update(resolved)
+                if resolved['page'] < 0:
+                    warnings.append(f"Source page {page.number+1}: unresolved original named destination {resolved['to']!r} retained.")
+            if copied['kind'] == fitz.LINK_GOTO and copied.get('page',-1) >= 0:
+                copied['page'], copied['to'] = mapped_destination(mappings,copied['page'],copied.get('to',fitz.Point(0,0)))
             target = dst[fragment['output_page']-1]
             previous = {item[0] for item in target.annot_xrefs()}
             target.insert_link(copied)
@@ -140,7 +179,7 @@ def restore_links(src, dst, mappings):
                     raise ValueError('Complex link appearance requires additional preservation support.')
                 dst.xref_set_key(new_xref, key, value)
             count += 1
-    return count
+    return count, warnings
 
 
 def build(source, plan_path, output, layout):
@@ -236,17 +275,17 @@ def build(source, plan_path, output, layout):
         assert abs(fragments[-1]['source_rect'][3]-p.rect.height)<.01
         for a,b in zip(fragments,fragments[1:]):
             assert abs(a['source_rect'][3]-b['source_rect'][1])<.01
-    restored_links = restore_links(src, dst, mappings)
+    restored_links, link_warnings = restore_links(src, dst, mappings)
     if digest(source) != source_hash:
         raise ValueError('Source changed during processing; refusing to publish output.')
     output.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation prevents accidental overwrite, including symlink targets.
     with output.open('xb') as stream:
         stream.write(dst.tobytes(garbage=4, deflate=True))
-    report = {'preserved_links': restored_links, 'source_sha256': source_hash, 'source_unchanged': digest(source)==source_hash, 'output_pages': len(dst), 'layout': layout, 'fragments': mappings, 'answer_spaces': gaps}
+    report = {'link_warnings': link_warnings, 'preserved_links': restored_links, 'source_sha256': source_hash, 'source_unchanged': digest(source)==source_hash, 'output_pages': len(dst), 'layout': layout, 'fragments': mappings, 'answer_spaces': gaps}
     with map_path.open('x') as stream:
         json.dump(report, stream, indent=2)
-    print(json.dumps({'output': str(output), 'pages': len(dst), 'coverage': 'complete', 'visual_review': 'required'}))
+    print(json.dumps({'output': str(output), 'pages': len(dst), 'coverage': 'complete', 'visual_review': 'required', 'link_warnings': link_warnings}))
 
 
 def main():

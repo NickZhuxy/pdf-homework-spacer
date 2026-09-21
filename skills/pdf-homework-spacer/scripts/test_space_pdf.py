@@ -3,7 +3,7 @@ import json
 import tempfile
 from pathlib import Path
 import pymupdf as fitz
-from space_pdf import inspect, build, load_source, digest, mapped_destination
+from space_pdf import inspect, build, load_source, digest, mapped_destination, resolve_named_link
 
 
 def test():
@@ -122,6 +122,37 @@ def test():
             for gap in mapping['answer_spaces']:
                 pix=result[gap['output_page']-1].get_pixmap(clip=fitz.Rect(gap['rect']),colorspace=fitz.csGRAY)
                 assert min(pix.samples)==255
+        # LaTeX-style footnotes are reported as LINK_NAMED, not LINK_GOTO.
+        for catalog_style in ['tree','legacy']:
+            named=fitz.open(source)
+            destination=f'[{named.page_xref(0)} 0 R /XYZ 48 442 0]'
+            if catalog_style=='tree':
+                named.xref_set_key(named.pdf_catalog(),'Names',f'<< /Dests << /Names [(Hfootnote.1) {destination}] >> >>')
+            else:
+                named.xref_set_key(named.pdf_catalog(),'Dests',f'<< /Hfootnote.1 {destination} >>')
+            named[0].insert_link({'kind':fitz.LINK_GOTO,'from':fitz.Rect(48,85,300,105),'page':-1,'to':'Hfootnote.1'})
+            named_path=root/('named-'+catalog_style+'.pdf'); named.save(named_path)
+            named=fitz.open(named_path)
+            link=named[0].get_links()[0]
+            assert link['kind']==fitz.LINK_NAMED
+            resolved=resolve_named_link(named,link)
+            assert resolved['page']==0 and abs(resolved['to'].y-350)<.01
+            old_style={'kind':fitz.LINK_NAMED,'name':'nameddest=Hfootnote.1'}
+            assert abs(resolve_named_link(named,old_style)['to'].y-350)<.01
+            for layout in ['print','tablet']:
+                plan=inspect(named_path,'large'); plan['reviewed']=True
+                np=root/'named-plan.json'; np.write_text(json.dumps(plan))
+                no=root/('named-'+catalog_style+'-'+layout+'.pdf')
+                build(named_path,np,no,layout)
+                result=fitz.open(no)
+                mapping=json.loads(no.with_suffix('.map.json').read_text())
+                restored=next(l for p in result for l in p.get_links())
+                target,point=mapped_destination(mapping['fragments'],0,fitz.Point(48,350))
+                assert restored['kind']==fitz.LINK_GOTO and restored['page']==target
+                assert abs(restored['to'].y-point.y)<.01
+                assert not mapping['link_warnings']
+            missing=resolve_named_link(named,{'kind':fitz.LINK_NAMED,'nameddest':'missing-footnote'})
+            assert missing['page']==-1 and missing['to']=='missing-footnote'
         try:
             build(source,plan_path,source,'print')
         except ValueError:
