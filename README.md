@@ -26,13 +26,7 @@ $pdf-homework-spacer adaptive, tablet layout
 | `print` | Keeps the original paper size; adds pages as needed (default) |
 | `tablet` | Makes each original page taller |
 
-You can also request custom space for individual questions. Default: medium spacing, print layout. The agent reviews question boundaries and verifies the output.
-
-## White space only
-
-The original file stays byte-for-byte unchanged. A separate PDF preserves the original questions, equations, figures, and existing whitespace at their original scale. No answers, labels, page numbers, lines, or decorations are added.
-
-The helper stops when it cannot preserve content safely. Links, annotations, forms, outlines, attachments, and layers are currently unsupported. Scans and complex layouts need visual boundary review. Nothing is silently flattened, removed, or rewritten.
+You can also request custom space for individual questions. Default: medium spacing, print layout. The agent reviews question boundaries and verifies the output. The original file stays byte-for-byte unchanged. A separate PDF preserves the original questions, equations, figures, and existing whitespace at their original scale. 
 
 ## Development
 
