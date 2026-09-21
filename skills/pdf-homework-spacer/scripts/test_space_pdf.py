@@ -3,7 +3,7 @@ import json
 import tempfile
 from pathlib import Path
 import pymupdf as fitz
-from space_pdf import inspect, build, load_source, digest
+from space_pdf import inspect, build, load_source, digest, mapped_destination
 
 
 def test():
@@ -78,14 +78,50 @@ def test():
         else:
             raise AssertionError('Annotations must be surfaced')
         linked=fitz.open(source)
-        linked[0].insert_link({'kind':fitz.LINK_URI, 'from':fitz.Rect(48,85,300,105), 'uri':'https://example.com'})
+        linked.new_page(width=612,height=792).insert_text((48,100),'4. Read the reference.')
+        linked[0].insert_link({'kind':fitz.LINK_URI, 'from':fitz.Rect(48,175,300,195), 'uri':'https://example.com'})
+        linked[0].insert_link({'kind':fitz.LINK_URI, 'from':fitz.Rect(48,85,300,105), 'uri':'mailto:teacher@example.com'})
+        linked[0].insert_link({'kind':fitz.LINK_GOTO, 'from':fitz.Rect(48,335,300,355), 'page':1,'to':fitz.Point(48,90)})
+        linked[1].insert_link({'kind':fitz.LINK_GOTO, 'from':fitz.Rect(48,85,300,105), 'page':0,'to':fitz.Point(48,335)})
+        # Existing link border/color must survive without adding new marks.
+        link_xref=linked[0].annot_xrefs()[0][0]
+        linked.xref_set_key(link_xref,'Border','[0 0 1]')
+        linked.xref_set_key(link_xref,'C','[0 0 1]')
         linked.save(root/'linked.pdf')
-        try:
-            load_source(root/'linked.pdf')
-        except ValueError:
-            pass
-        else:
-            raise AssertionError('Links may not be silently dropped')
+        linked_source=fitz.open(root/'linked.pdf')
+        linked_hash=digest(root/'linked.pdf')
+        for layout in ['print','tablet']:
+            plan=inspect(root/'linked.pdf','large')
+            plan['reviewed']=True
+            lp=root/('linked-'+layout+'.json'); lp.write_text(json.dumps(plan))
+            out=root/('linked-'+layout+'.pdf')
+            build(root/'linked.pdf',lp,out,layout)
+            result=fitz.open(out)
+            mapping=json.loads(out.with_suffix('.map.json').read_text())
+            assert mapping['preserved_links']==4
+            assert sum(len(p.get_links()) for p in result)==4
+            assert digest(root/'linked.pdf')==linked_hash
+            for source_page in linked_source:
+                for link in source_page.get_links():
+                    dest_page, top_left=mapped_destination(mapping['fragments'],source_page.number,link['from'].tl)
+                    restored=next(l for l in result[dest_page].get_links() if abs(l['from'].x0-top_left.x)<.01 and abs(l['from'].y0-top_left.y)<.01)
+                    assert restored['kind']==link['kind']
+                    for key in ('Border','C'):
+                        assert result.xref_get_key(restored['xref'],key)==linked_source.xref_get_key(link['xref'],key)
+                    if link['kind']==fitz.LINK_URI:
+                        assert restored['uri']==link['uri']
+                    else:
+                        target, point=mapped_destination(mapping['fragments'],link['page'],link['to'])
+                        assert restored['page']==target
+                        assert abs(restored['to'].x-point.x)<.01 and abs(restored['to'].y-point.y)<.01
+            for fragment in mapping['fragments']:
+                a=linked_source[fragment['source_page']-1].get_pixmap(matrix=fitz.Matrix(2,2),clip=fitz.Rect(fragment['source_rect']))
+                b=result[fragment['output_page']-1].get_pixmap(matrix=fitz.Matrix(2,2),clip=fitz.Rect(fragment['output_rect']))
+                assert (a.width,a.height)==(b.width,b.height)
+                assert sum(abs(x-y)>20 for x,y in zip(a.samples,b.samples))/len(a.samples)<.005
+            for gap in mapping['answer_spaces']:
+                pix=result[gap['output_page']-1].get_pixmap(clip=fitz.Rect(gap['rect']),colorspace=fitz.csGRAY)
+                assert min(pix.samples)==255
         try:
             build(source,plan_path,source,'print')
         except ValueError:

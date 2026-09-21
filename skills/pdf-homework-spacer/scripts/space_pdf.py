@@ -25,8 +25,11 @@ def load_source(path):
     for page in doc:
         if page.rotation:
             page.remove_rotation()
-        if list(page.annots() or []) or list(page.widgets() or []) or page.get_links():
-            raise ValueError('Links, annotations or forms are unsupported; refusing to remove or flatten source content.')
+        if list(page.annots() or []) or list(page.widgets() or []):
+            raise ValueError('Annotations or forms are unsupported; refusing to remove or flatten source content.')
+        for link in page.get_links():
+            if link['kind'] not in (fitz.LINK_URI, fitz.LINK_GOTO, fitz.LINK_GOTOR, fitz.LINK_LAUNCH):
+                raise ValueError('Unsupported link action; cannot preserve this particular link.')
     return doc
 
 
@@ -34,7 +37,13 @@ def blank_rows(page):
     # 144 dpi catches thin rules, math and image ink; coordinates are PDF points.
     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), colorspace=fitz.csGRAY, alpha=False, annots=False)
     samples = pix.samples
-    return [min(samples[y * pix.stride:y * pix.stride + pix.width]) == 255 for y in range(pix.height)]
+    rows = [min(samples[y * pix.stride:y * pix.stride + pix.width]) == 255 for y in range(pix.height)]
+    # Keep each clickable rectangle together, including any existing border.
+    for link in page.get_links():
+        rect = link['from']
+        for y in range(max(0, math.floor(rect.y0*2)-2), min(len(rows), math.ceil(rect.y1*2)+3)):
+            rows[y] = False
+    return rows
 
 
 def safe(rows, y):
@@ -86,6 +95,52 @@ def inspect(path, size):
         pages.append({'page': page.number+1, 'width': page.rect.width, 'height': page.rect.height, 'insertions': inserts, 'lines': lines})
     return {'version': 1, 'source_sha256': digest(path), 'mode': 'uniform', 'size': size,
             'reviewed': False, 'warnings': warnings, 'pages': pages}
+
+
+def mapped_destination(mappings, page_number, point):
+    point = fitz.Point(point)
+    fragments = [m for m in mappings if m['source_page'] == page_number+1]
+    if not fragments:
+        raise ValueError('Link destination refers to an unavailable source page.')
+    # At a cut, target the following fragment, after the inserted white space.
+    fragment = next((m for m in fragments if m['source_rect'][1] <= point.y < m['source_rect'][3]), None)
+    if fragment is None:
+        fragment = fragments[0] if point.y < 0 else fragments[-1]
+    offset = fragment['output_rect'][1] - fragment['source_rect'][1]
+    return fragment['output_page']-1, fitz.Point(point.x, point.y+offset)
+
+
+def restore_links(src, dst, mappings):
+    count = 0
+    for page in src:
+        for link in page.get_links():
+            rect = link['from']
+            fragment = next((m for m in mappings if m['source_page']==page.number+1
+                             and fitz.Rect(m['source_rect']).contains(rect)), None)
+            if fragment is None:
+                raise ValueError('A link rectangle crosses a cut; choose a boundary outside the link.')
+            offset = fragment['output_rect'][1]-fragment['source_rect'][1]
+            copied = {k:v for k,v in link.items() if k not in ('xref','id')}
+            copied['from'] = fitz.Rect(rect.x0,rect.y0+offset,rect.x1,rect.y1+offset)
+            if copied['kind'] == fitz.LINK_GOTO:
+                copied['page'], copied['to'] = mapped_destination(mappings,link['page'],link.get('to',fitz.Point(0,0)))
+            target = dst[fragment['output_page']-1]
+            previous = {item[0] for item in target.annot_xrefs()}
+            target.insert_link(copied)
+            added = [item[0] for item in target.annot_xrefs() if item[0] not in previous]
+            if len(added) != 1:
+                raise ValueError('Could not identify the restored link annotation.')
+            new_xref = added[0]
+            # Preserve existing appearance rather than introducing default borders.
+            for key in ('Border','BS','C','H','F'):
+                kind, value = src.xref_get_key(link['xref'], key)
+                if kind == 'xref':
+                    value = src.xref_object(int(value.split()[0]), compressed=True)
+                if re.search(r'\d+\s+\d+\s+R\b', value):
+                    raise ValueError('Complex link appearance requires additional preservation support.')
+                dst.xref_set_key(new_xref, key, value)
+            count += 1
+    return count
 
 
 def build(source, plan_path, output, layout):
@@ -181,13 +236,14 @@ def build(source, plan_path, output, layout):
         assert abs(fragments[-1]['source_rect'][3]-p.rect.height)<.01
         for a,b in zip(fragments,fragments[1:]):
             assert abs(a['source_rect'][3]-b['source_rect'][1])<.01
+    restored_links = restore_links(src, dst, mappings)
     if digest(source) != source_hash:
         raise ValueError('Source changed during processing; refusing to publish output.')
     output.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation prevents accidental overwrite, including symlink targets.
     with output.open('xb') as stream:
         stream.write(dst.tobytes(garbage=4, deflate=True))
-    report = {'source_sha256': source_hash, 'source_unchanged': digest(source)==source_hash, 'output_pages': len(dst), 'layout': layout, 'fragments': mappings, 'answer_spaces': gaps}
+    report = {'preserved_links': restored_links, 'source_sha256': source_hash, 'source_unchanged': digest(source)==source_hash, 'output_pages': len(dst), 'layout': layout, 'fragments': mappings, 'answer_spaces': gaps}
     with map_path.open('x') as stream:
         json.dump(report, stream, indent=2)
     print(json.dumps({'output': str(output), 'pages': len(dst), 'coverage': 'complete', 'visual_review': 'required'}))

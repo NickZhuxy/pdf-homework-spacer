@@ -30,6 +30,8 @@ You can also request custom space for individual questions. Default: medium spac
 
 Output files keep the original name with `_spaced` appended before `.pdf`: `Homework 01.pdf` → `Homework 01_spaced.pdf`. Existing files are never overwritten.
 
+Ordinary web, email, and internal page links remain clickable and move with the original content. Annotations and forms still require preservation support.
+
 ## Development
 
 Python 3.10+ and PyMuPDF are required. The PDF helper runs locally with no network or model API calls; adaptive estimates use the agent's current model.
