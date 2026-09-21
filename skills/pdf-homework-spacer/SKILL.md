@@ -43,9 +43,9 @@ Use Python and `scripts/requirements.txt` in an available runtime or virtual env
    - If a question continues on another page, put its writing space only after its actual end. Keep instruction-only pages with no insertions.
    - Put the final gap before a footer when safe, preserving that footer. Never delete it.
    - Resolve warnings and set `reviewed: true`. Retain every source page entry in order. Internal labels are never rendered.
-4. Run `python scripts/space_pdf.py build INPUT.pdf work/plan.json OUTPUT.pdf --layout print` (or `tablet`). Use a new output filename. The map is an external QA artifact, not PDF content.
+4. Run `python scripts/space_pdf.py build INPUT.pdf work/plan.json OUTPUT.pdf --layout print` (or `tablet`). Name the output exactly `<original_stem>_spaced.pdf`: preserve the entire original stem, including spaces, punctuation and capitalization, and append `_spaced` immediately before `.pdf` (for example, `Homework 01.pdf` becomes `Homework 01_spaced.pdf`). Do not add mode names, dates, or other suffixes. If that output already exists, use a fresh output directory with the same filename rather than overwriting it. The map is an external QA artifact, not PDF content.
 5. Render every output page; inspect contact sheets and full-size cut boundaries. Verify all source content is present once, unchanged in appearance/scale/order, no cuts cross content, and inserted regions contain only white space. Verify source hash is unchanged and the map covers every original page continuously without omissions. Text extraction alone is insufficient because clipped PDF objects can expose hidden text. Do not deliver if any preservation check fails.
-6. Deliver only the expanded PDF unless the user requests QA artifacts. Report chosen spacing and page count outside the PDF. Respect host output-directory rules; otherwise use a fresh `<stem>_spaced.pdf` beside the original.
+6. Deliver only the expanded PDF unless the user requests QA artifacts. Report chosen spacing and page count outside the PDF. Respect host output-directory rules; otherwise save beside the original when the target is available. The `<original_stem>_spaced.pdf` naming rule applies in every output directory.
 
 ## Unsupported layouts
 

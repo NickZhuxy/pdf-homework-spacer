@@ -28,6 +28,8 @@ $pdf-homework-spacer adaptive, tablet layout
 
 You can also request custom space for individual questions. Default: medium spacing, print layout. The agent reviews question boundaries and verifies the output. The original file stays byte-for-byte unchanged. A separate PDF preserves the original questions, equations, figures, and existing whitespace at their original scale. 
 
+Output files keep the original name with `_spaced` appended before `.pdf`: `Homework 01.pdf` → `Homework 01_spaced.pdf`. Existing files are never overwritten.
+
 ## Development
 
 Python 3.10+ and PyMuPDF are required. The PDF helper runs locally with no network or model API calls; adaptive estimates use the agent's current model.
