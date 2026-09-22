@@ -38,7 +38,7 @@ Ordinary web, email, internal page links, and named footnote destinations (such 
 
 Add `tex` to request editable LaTeX and a compiled preview, or use `tex` alone without adding space. The agent reuses matching source when available; otherwise it reconstructs text and equations from PDF extraction and visual inspection. Diagrams may remain original figure assets. This produces editable source, not a guarantee of the original LaTeX or identical layout.
 
-Uses local PyMuPDF, optional Poppler extraction, and an installed TeX engine (XeLaTeX by default). No paid conversion service is required. The original PDF remains untouched.
+Uses local PyMuPDF, optional Poppler extraction, and an installed TeX engine (XeLaTeX by default). No paid conversion service is required. The original PDF remains untouched. LaTeX files are saved beside the input PDF by default, with the compiled preview in a separate subfolder to prevent overwriting the original.
 
 ## Development
 
