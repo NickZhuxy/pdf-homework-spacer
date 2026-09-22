@@ -1,4 +1,4 @@
 interface:
   display_name: "PDF Homework Spacer"
-  short_description: "Expand PDF whitespace while preserving every question"
+  short_description: "Expand homework PDFs or reconstruct editable LaTeX"
   default_prompt: "Use $pdf-homework-spacer to expand only the white space in this PDF, preserving all original content."

@@ -1,13 +1,17 @@
 ---
 name: pdf-homework-spacer
-description: Expand only the white space between questions in homework, worksheet, problem-set, or exam PDFs. Preserve all original content at its original scale; never overwrite the source or add text, answers, labels, lines, or decorations. Offers small, medium, large, and adaptive spacing.
+description: Expand only the white space between questions in homework, worksheet, problem-set, or exam PDFs. Preserve all original content at its original scale; never overwrite the source or add text, answers, labels, lines, or decorations. Offers small, medium, large, and adaptive spacing, plus optional editable LaTeX reconstruction when requested.
 ---
 
 # PDF Homework Spacer
 
-The only mission is to expand white space. The input file must remain byte-for-byte unchanged. Create a separate PDF in which original content is preserved in order and at its original scale, separated only by additional blank white space.
+By default, the only mission is to expand white space. The input file must remain byte-for-byte unchanged. Create a separate PDF in which original content is preserved in order and at its original scale, separated only by additional blank white space.
 
-## Non-negotiable preservation contract
+## Optional LaTeX export
+
+When asked for `tex`, LaTeX, or editable source, follow [references/pdf-to-tex.md](references/pdf-to-tex.md). This explicitly requested mode reconstructs editable source without changing the input PDF. It may be used alone (`$pdf-homework-spacer tex`) or alongside spacing (`$pdf-homework-spacer adaptive tex`). Do not apply the spacing-only prohibition on retyping to this mode; preserve the original content faithfully and validate the reconstruction. Normal spacing continues to use original PDF fragments.
+
+## Preservation contract for spacing
 
 - Never rewrite, retype, paraphrase, solve, replace, remove, or obscure source content. Preserve wording, symbols, equations, figures, headers, footers and existing whitespace.
 - Never add any visible content: no answers, labels, page numbers, continuation notices, titles, watermarks, lines, grids, borders, or decorative marks. Internal plan labels and QA information belong outside the PDF.
